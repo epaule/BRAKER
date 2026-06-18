@@ -4581,7 +4581,6 @@ sub make_compleasm_hints {
     close(HINTS) or clean_abort("$AUGUSTUS_CONFIG_PATH/species/$species",
         $useexisting, "ERROR in file " . __FILE__ ." at line "
         . __LINE__ ."\nfailed to close file $otherfilesDir/hintsfile.gff!\n");
-    unlink $odb12;
     print LOG "\# " . (localtime)
         . ": Generating hints from compleasm (genome level) finished.\n" if ($v > 2);
 }
