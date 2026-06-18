@@ -200,8 +200,9 @@ RUN cd /opt && \
 # braker including RNAseq test file
 
 RUN cd /opt && \
-    git clone https://github.com/Gaius-Augustus/BRAKER.git && \
+    git clone https://github.com/epaule/BRAKER.git && \
     cd BRAKER && \
+    git checkout test-docker && \
     cd example && \
     wget http://bioinf.uni-greifswald.de/augustus/datasets/RNAseq.bam
 
