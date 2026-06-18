@@ -4545,11 +4545,10 @@ sub make_compleasm_hints {
     );
 
     $busco_lineage.='_odb10' unless $busco_lineage=~/_10/;
-    use File:Path qw(make_path);
-    make_path "compleasm_genome_out/$busco_lineage" ;
+    print `mkdir -p compleasm_genome_out/$busco_lineage` ;
     my $odb12=$busco_lineage;
     $odb12=~s/_10/_12/;
-    symlink "compleasm_genome_out/${busco_lineage}","compleasm_genome_out/${odb12}";
+    print `ln -s compleasm_genome_out/${busco_lineage} compleasm_genome_out/$odb12`;
     $errorfile = "$errorfilesDir/compleasm_to_hints.stderr";
     $cmdString = "$PYTHON3_PATH/python3 $string -p $COMPLEASM_PATH/compleasm.py -g $genome -d $busco_lineage -t $CPU "
         . "-o $compleasm_hints 1> $errorfile 2>&1";
