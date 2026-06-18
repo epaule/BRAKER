@@ -4544,11 +4544,6 @@ sub make_compleasm_hints {
         $AUGUSTUS_SCRIPTS_PATH,  $AUGUSTUS_CONFIG_PATH
     );
 
-    $busco_lineage.='_odb10' unless $busco_lineage=~/_10/;
-    print `mkdir -p compleasm_genome_out/$busco_lineage` ;
-    my $odb12=$busco_lineage;
-    $odb12=~s/_10/_12/;
-    print `ln -s compleasm_genome_out/${busco_lineage} compleasm_genome_out/$odb12`;
     $errorfile = "$errorfilesDir/compleasm_to_hints.stderr";
     $cmdString = "$PYTHON3_PATH/python3 $string -p $COMPLEASM_PATH/compleasm.py -g $genome -d $busco_lineage -t $CPU "
         . "-o $compleasm_hints 1> $errorfile 2>&1";

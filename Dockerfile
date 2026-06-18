@@ -69,8 +69,13 @@ RUN cd /opt && \
     make && \
     cd scripts && \
     chmod a+x *.pl && \
-    chmod a+x *.py
+    chmod a+x *.py && \
+    rm compleasm_to_hints.py
 
+COPY compleasm_to_hints.py.1 /opt/Augustus/scripts/compleasm_to_hints.py
+
+RUN cd /opt/Augustus/scripts && \
+    chmod a+x *.py
 
 FROM $BASE_CONTAINER
 
