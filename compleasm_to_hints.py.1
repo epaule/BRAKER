@@ -50,6 +50,8 @@ def run_simple_process(args_lst):
             print('Error in file ' + frameinfo.filename + ' at line ' +
                   str(frameinfo.lineno) + ': ' + "Return code of subprocess was " +
                   str(result.returncode) + str(result.args))
+            print('STDOUT:', result.stdout.decode('utf-8', errors='replace'))
+            print('STDERR:', result.stderr.decode('utf-8', errors='replace'))
             quit(1)
     except subprocess.CalledProcessError as grepexc:
         frameinfo = getframeinfo(currentframe())
@@ -99,7 +101,7 @@ def miniprot_to_hints(gff_lines):
 
 def main():
     parser = argparse.ArgumentParser(description="Run compleasm and generate a gtf file with complete BUSCO genes.")
-    
+
     # Mandatory input arguments
     parser.add_argument("-g", "--genome", required=True, help="Genome file in fasta format")
     parser.add_argument("-d", "--database", required=True, help="BUSCO database to use")
@@ -107,36 +109,65 @@ def main():
     parser.add_argument("-t", "--threads", required=False, help="Number of threads to use, default is 1")
     parser.add_argument("-o", "--output", required=True, help="Output file name, file is in GTF format.")
     parser.add_argument("-s", "--scratch_dir", required=False, help="Temporary directory for compleasm output, default is current directory, must be writable.")
+    parser.add_argument("-L", "--library_path", required=False, help="Path to pre-downloaded BUSCO lineage data (compleasm mb_downloads directory). If provided, compleasm will use this instead of downloading.")
     args = parser.parse_args()
 
-    if args.compleasm is None and shutil.which('compleasm.py'):
-        # Try to find 'compleasm' in the system PATH
-        args.compleasm = shutil.which('compleasm')
-    elif args.compleasm is None and os.environ.get('COMPLEASM_PATH'):
-        # If 'compleasm' is not in PATH, check for an environment variable
-        args.compleasm = str(os.environ.get('COMPLEASM_PATH')) + '/compleasm.py'
-    elif args.compleasm is None:
-        # If still not found, raise an error
-        raise FileNotFoundError("compleasm is not in PATH and COMPLEASM_PATH is not set")
+    if args.compleasm is None:
+        # Try to find compleasm.py in PATH
+        found = shutil.which('compleasm.py') or shutil.which('compleasm')
+        if found:
+            args.compleasm = found
+        elif os.environ.get('COMPLEASM_PATH'):
+            args.compleasm = str(os.environ.get('COMPLEASM_PATH')) + '/compleasm.py'
+        elif os.path.exists('/opt/compleasm_kit/compleasm.py'):
+            args.compleasm = '/opt/compleasm_kit/compleasm.py'
+        else:
+            raise FileNotFoundError("compleasm is not in PATH, COMPLEASM_PATH is not set, and /opt/compleasm_kit/compleasm.py does not exist")
     if args.compleasm is not None:
         # check whether provided compleasm is executable
         if not os.access(args.compleasm, os.X_OK):
             raise FileNotFoundError("compleasm is not executable")
-        
-    # check whether the database has the ending odb_10, if not, add it
-    if not args.database.endswith("_odb12"):
+
+    # Ensure database uses _odb12 suffix (compleasm only supports odb12).
+    # Convert e.g. eukaryota_odb12 -> eukaryota_odb12, or add _odb12 if missing.
+    if re.search(r'_odb\d+$', args.database):
+        args.database = re.sub(r'_odb\d+$', '_odb12', args.database)
+    else:
         args.database = args.database + "_odb12"
 
     # apply compleasm to genome file with run_subprocess and the database
     if args.scratch_dir is None:
         args.scratch_dir = "compleasm_genome_out"
-    run_simple_process([args.compleasm, 'run', '-l', args.database, '-a', args.genome, '-t', args.threads, '-o', args.scratch_dir])
+    compleasm_cmd = [args.compleasm, 'run', '-l', args.database, '-a', args.genome, '-t', str(args.threads), '-o', args.scratch_dir]
+    if args.library_path is not None:
+        compleasm_cmd.extend(['--library_path', args.library_path])
+    run_simple_process(compleasm_cmd)
+
+    # Detect the actual lineage directory created by compleasm.
+    # compleasm may auto-upgrade the lineage (e.g. eukaryota_odb12 -> eukaryota_odb12),
+    # so we cannot assume the output directory matches the requested lineage name.
+    actual_lineage_dir = os.path.join(args.scratch_dir, args.database)
+    if not os.path.isdir(actual_lineage_dir):
+        # Search for any _odb* directory in scratch_dir
+        import glob
+        lineage_base = re.sub(r'_odb\d+$', '', args.database)
+        candidates = sorted(glob.glob(os.path.join(args.scratch_dir, lineage_base + '_odb*')))
+        if candidates:
+            actual_lineage_dir = candidates[-1]  # pick highest version
+            print(f"[INFO] Lineage was upgraded: requested {args.database}, found {os.path.basename(actual_lineage_dir)}")
+        else:
+            # Fall back: any directory containing full_table.tsv
+            for root, dirs, files in os.walk(args.scratch_dir):
+                if 'full_table.tsv' in files:
+                    actual_lineage_dir = root
+                    print(f"[INFO] Found full_table.tsv in {root}")
+                    break
 
     # parse compleasm output table for complete BUSCOs without frameshifts
-    busco_ids = extract_tx_ids_from_tsv(args.scratch_dir + '/' + args.database + '/full_table.tsv')
-    
+    busco_ids = extract_tx_ids_from_tsv(actual_lineage_dir + '/full_table.tsv')
+
     # filter the miniprot alignments for those that have no frame shifts
-    gff_lines = read_and_filter_gff(args.scratch_dir + '/' + args.database + '/miniprot_output.gff', busco_ids)
+    gff_lines = read_and_filter_gff(actual_lineage_dir + '/miniprot_output.gff', busco_ids)
 
     # convert the miniprot lines to CDSpart hints
     hints_lines = miniprot_to_hints(gff_lines)
@@ -151,16 +182,36 @@ def main():
 
     # print the BUSCO scores for genome level statistics to STDOUT
     print("The following BUSCOs were found in the genome:")
-    try:
-        with open(args.scratch_dir + '/' + 'summary.txt', 'r') as busco_summary:
-            for line in busco_summary:
-                line = line.strip()
-                print(line)
-    except IOError:
-        print("Failed to open file", args.scratch_dir + '/' + 'summary.txt')
+    # compleasm puts summary.txt either at scratch_dir/summary.txt or
+    # scratch_dir/{lineage}/summary.txt depending on version
+    summary_found = False
+    for summary_candidate in [
+        args.scratch_dir + '/summary.txt',
+        args.scratch_dir + '/' + args.database + '/summary.txt',
+    ]:
+        if os.path.exists(summary_candidate):
+            try:
+                with open(summary_candidate, 'r') as busco_summary:
+                    for line in busco_summary:
+                        line = line.strip()
+                        print(line)
+                summary_found = True
+                break
+            except IOError:
+                pass
+    if not summary_found:
+        # Try to find any summary.txt in the scratch dir
+        import glob
+        summaries = glob.glob(args.scratch_dir + '/**/summary.txt', recursive=True)
+        if summaries:
+            with open(summaries[0], 'r') as busco_summary:
+                for line in busco_summary:
+                    print(line.strip())
+        else:
+            print("No summary.txt found in", args.scratch_dir)
 
-    # delete the temporary directory
-    shutil.rmtree(args.scratch_dir)
+    # Note: scratch_dir is NOT deleted here — Snakemake's collect_results
+    # rule handles cleanup. The summary.txt is needed as a rule output.
 
 if __name__ == "__main__":
     main()
