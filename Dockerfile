@@ -77,6 +77,12 @@ COPY compleasm_to_hints.py.1 /opt/Augustus/scripts/compleasm_to_hints.py
 RUN cd /opt/Augustus/scripts && \
     chmod a+x *.py
 
+COPY best_by_compleasm.py.1 /opt/TSEBRA/bin/best_by_compleasm.py
+
+RUN cd /opt/TSEBRA/bin && \
+    chmod a+x *.py
+
+
 FROM $BASE_CONTAINER
 
 USER root
