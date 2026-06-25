@@ -70,7 +70,8 @@ RUN cd /opt && \
     cd scripts && \
     chmod a+x *.pl && \
     chmod a+x *.py && \
-    rm compleasm_to_hints.py
+    rm compleasm_to_hints.py && \
+    rm /opt/TSEBRA/bin/best_by_compleasm.py
 
 COPY compleasm_to_hints.py.1 /opt/Augustus/scripts/compleasm_to_hints.py
 
